@@ -105,7 +105,7 @@
 
 
 (defun timan-kitchen-timer--read-timestring ()
-  (list (read-string "timan-at-time:")
+  (list (read-string "chaim at time:")
         (cond ((consp current-prefix-arg)
                (let ((sym (intern (completing-read "sym: " timan-sound-alist))))
                  (if (assoc sym timan-sound-alist)
