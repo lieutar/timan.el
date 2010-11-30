@@ -34,9 +34,9 @@ emacs でキッチンタイマーみたいな感じでチャイムをならし�
 
    - UUu
 
-     最後に u の付く数値 UU は、 chaim-kitchen-timer の UU 倍を意味します
+     最後に u の付く数値 UU は、 timan-kitchen-timer の UU 倍を意味します
 
-   - そのほかの場合は、 chaim-kitchen-timer-unit 秒と設定されます
+   - そのほかの場合は、 timan-kitchen-timer-unit 秒と設定されます
 
 
   記録付きキッチンタイマー機能
