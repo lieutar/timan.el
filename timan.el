@@ -254,7 +254,7 @@
 
 
 
-(defun timan-kitchen-timer--reCANCELED: Tue Nov 30 17:59:05 2010ad-timestring ()
+(defun timan-kitchen-timer--read-timestring ()
   (list (read-string "chaim at time:")
         (cond ((consp current-prefix-arg)
                (let ((sym (intern (completing-read
