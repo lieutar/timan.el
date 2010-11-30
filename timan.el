@@ -68,14 +68,6 @@
 
 (defvar timan-default-chaim-symbol 'chaim-00)
 
-(eval-after-load "yatest"
-  '(yatest::define-test timan timan-get-file
-     (let ((timan-sound-alist '((x :native "x.wav" :mp3 "x.mp3")
-                                (a :native "a.wav" :mp3 "a.mp3")))
-           (timan-file-type :native))
-       (yatest (equal "a.wav" (timan-get-file 'a)))
-       (let ((timan-file-type :mp3))
-         (yatest (equal "a.mp3" (timan-get-file)))))))
 
 
 (defun timan-get-file (sym)
@@ -83,6 +75,18 @@
                     timan-sound-alist)))
     (and slot
          (plist-get (cdr slot) timan-file-type ))))
+
+(eval-after-load "yatest"
+  '(yatest::define-test timan timan-get-file
+     (let ((timan-sound-alist '((x :native "x.wav" :mp3 "x.mp3")
+                                (a :native "a.wav" :mp3 "a.mp3")))
+           (timan-file-type :native))
+       (yatest wav (equal "a.wav" (yatest::p "wav" (timan-get-file 'a))))
+       (let ((timan-file-type :mp3))
+         (yatest mp3 (equal "a.mp3" (yatest::p "mp3" (timan-get-file 'a))))))))
+;;(yatest::run 'timan 'timan-get-file)
+
+
 
 ;;;
 ;;; Players
@@ -103,7 +107,25 @@
                               timan-mp3-player-program
                               file)))
     (set-process-sentinel proc sentinel)))
-;;(timan-play-mp3 :file "sounds/00.mp3")
+
+;;(timan-play-mp3 :file "sounds/chaim/00.mp3")
+(eval-after-load "yatest"
+  '(yatest::define-test timan timan-play-mp3
+     (let ((len  (length (buffer-list)))
+           (hoge nil))
+       (timan-play-mp3 :file "sounds/notify/00.mp3"
+                       :callback (lambda () (setq hoge "hoge")))
+       (yatest "buffer was increased"
+               (< len (length (buffer-list))))
+       ;; TODO yatest に非同期テストを実装しないとテストしきれない
+       ;;        (sleep-for 4)
+       ;;        (yatest "buffer was decreased"
+       ;;                (= len (length (buffer-list))))
+       ;;        (yatest "callback was invoked"
+       ;;                (equal hoge "hoge"))
+       )))
+;;(yatest::run 'timan 'timan-play-mp3)
+
 
 (defun timan-play-sound (&optional sym &rest opt)
   (let ((file (timan-get-file sym))
@@ -129,12 +151,16 @@
                       ,len))
           (message "Done..."))))))
 
+;;; NOTE: The test of following function is to be manually.
+
 (defun timan-play-all-sounds ()
   "Plays all sounds that were registered into the `timan-sounds-alist'."
   (interactive)
   (funcall (timan-play-all-sounds::iter
             0
             (length timan-sound-alist))))
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -159,7 +185,6 @@
 
 (defvar timan-kitchen-timer-tick-sound    'notify-02)
 (defvar timan-kitchen-timer-tick-interval (* 60 5))
-
 
 (defconst timan-kitchen-timer--all-timers (make-hash-table :test 'eq))
 (defconst timan-kitchen-timer--count 0)
@@ -212,47 +237,102 @@
                 (slot     (gethash timer-id
                                    timan-kitchen-timer--all-timers)))
            (when slot
-             (let ((timer  (car   slot))
-                   (ticker (cadr  slot))
-                   (action (caddr slot)))
+             (let ((timer  (car    slot))
+                   (ticker (cadr   slot))
+                   (action (caddr  slot))
+                   (label  (cadddr slot)))
                (when timer  (cancel-timer timer))
                (when ticker (cancel-timer ticker))
                (remhash timer-id
                         timan-kitchen-timer--all-timers)
                (unless no-hook
-                 (funcall (or action (lambda ()))))))))))
+                 (funcall (or action (lambda ())))
+                 (message "canceled: %s" label)))))
+         (timan-menu-update))))
+
+
+
+
+
+(defun timan-kitchen-timer--read-intervalstr (intervalstr)
+  (+ (*    1 (if (string-match "\\([0-9]+\\)\\s *sec" intervalstr)
+                 (string-to-number (match-string 1 intervalstr))
+               0))
+     (*   60 (if (string-match "\\([0-9]+\\)\\s *min" intervalstr)
+                 (string-to-number (match-string 1 intervalstr))
+               0))
+     (* 3600 (if (string-match "\\([0-9]+\\)\\s *hour" intervalstr)
+                 (string-to-number (match-string 1 intervalstr))
+               0))))
+
+(eval-after-load "yatest"
+  '(yatest::define-test timan timan-kitchen-timer--read-intervalstr
+     (dolist (tcase '(("5 sec" 5)
+                      ("5 sec 2 min" 125)
+                      ("5 sec 2 min 2 hour" 7325)
+                     ))
+       (let ((str (car tcase))
+             (num (cadr tcase)))
+         (eval
+          `(yatest ,str (eq ,num
+                            (yatest::p ,str
+                                       (timan-kitchen-timer--read-intervalstr
+                                        ,str)))))))))
+;;(yatest::run 'timan 'timan-kitchen-timer--read-intervalstr)
+
+
+
+
 
 (defun timan-kitchen-timer--run-at-time (timestring callback &optional cancel)
   (let*
       ((timer-id
         (intern (format "timer-%d" (setq timan-kitchen-timer--count
                                          (1+ timan-kitchen-timer--count)))))
+       (intervalstr
+        (timan-kitchen-timer-parse-timestring timestring))
+
+       (interval
+        (timan-kitchen-timer--read-intervalstr intervalstr))
+
+       (endtime (+ (cadr (current-time)) interval))
+
        (timer
         (run-at-time
-         (timan-kitchen-timer-parse-timestring timestring)
+         intervalstr
          nil
          `(lambda ()
             (timan-kitchen-timer-cancel-timer :timer-id ',timer-id
                                               :no-hook t)
             (funcall ,callback))))
-       (tick
-        (run-at-time
-         "0 sec"
-         timan-kitchen-timer-tick-interval
-         (lambda () (timan-play-sound timan-kitchen-timer-tick-sound)))))
 
-    (puthash timer-id (list timer tick cancel)
+       (ticker
+        (run-at-time
+         (format "%d sec" timan-kitchen-timer-tick-interval)
+         timan-kitchen-timer-tick-interval
+         `(lambda ()
+            (when (< (cadr (current-time)) ,endtime)
+              (timan-play-sound timan-kitchen-timer-tick-sound))
+            ))))
+
+    (puthash timer-id (list timer
+                            ticker
+                            cancel
+                            (format "%s -> %s"
+                                    (current-time-string)
+                                    intervalstr))
              timan-kitchen-timer--all-timers)
+
+    (timan-menu-update)
     t))
 
+;;
 ;;(run-at-time "0 sec" 1000 'identity)
-;;(let ((timan-kitchen-timer-tick-interval 2)) (timan-kitchen-timer "0 0 4"))
+;;(let ((timan-kitchen-timer-tick-interval 2)) (timan-kitchen-timer "0 0 6"))
 ;;(setq aaa (run-at-time "0 sec" nil 'identity))
 ;;(cancel-timer aaa)
-
-
-
-
+;;(progn (message "\n\n\n\n")(sleep-for 2))
+;;
 
 (defun timan-kitchen-timer--read-timestring ()
   (list (read-string "chaim at time:")
@@ -332,11 +412,39 @@
          "Run with insert"
          timan-kitchen-timer-with-insert)
 
-        (timan-kitchen-timer-cancel-all-timers
+
+        (timan-kitchen-timer-cancel
          menu-item
-         "Cancel all timers"
-         timan-kitchen-timer-cancel-all-timers)
-        ))
+         "Cancel"
+         (keymap
+
+          (timan-kitchen-timer-cancel-all-timers
+           menu-item
+           "All"
+           timan-kitchen-timer-cancel-all-timers)
+
+          ,@(let ((R))
+              (maphash
+               (lambda (key val)
+                 (let ((label (cadddr val)))
+                   (add-to-list
+                    'R
+                    `(,(intern (format "timan-kitchen-timer-cancel-%s" key))
+                      menu-item
+                      ,label
+                      (lambda ()
+                        (interactive)
+                        (timan-kitchen-timer-cancel-timer
+                         :timer-id ',key))))))
+               timan-kitchen-timer--all-timers)
+              (when R
+                   (cons 
+                    '(timan-sep
+                      menu-item
+                      "----")
+                    (reverse R)))))
+         ) ;; end of cancel
+        ) ;; end of kitchin timer
 
       (timan-play
        menu-item
@@ -362,7 +470,7 @@
                     :callback (lambda () (message "Done...")))
                    (message "%s" ',sym)))))
 
-           timan-sound-alist))))))
+           timan-sound-alist)))))))
 
 (defun timan-menu-enable ()
   (interactive)
