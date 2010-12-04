@@ -132,6 +132,101 @@
         (player (assq timan-file-type timan-player-alist)))
     (apply (cdr player) :file file opt)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; timan calc
+;;;
+
+(defsubst timan-calc-time-gt (a b)
+  (let ((a0 (car  a))
+        (a1 (cadr a))
+        (b0 (car  b))
+        (b1 (cadr b)))
+    (or (> a0 b0)
+        (and (= a0 b0)
+             (> a1 b1)))))
+
+(defsubst timan-calc-time-sub (a b)
+
+  (let ((a0 (nth 0 a))
+        (a1 (nth 1 a))
+        (b0 (nth 0 b))
+        (b1 (nth 1 b))
+        signed s0 s1)
+
+    (if (timan-calc-time-gt a b)
+
+        (progn
+          (setq signed nil)
+          (if (> a1 b1)
+              (progn
+                (setq s0 (- a0 b0))
+                (setq s1 (- a1 b1)))
+            (progn
+              (setq s0 (- a0 b0 1))
+              (setq s1 (- a1 -65536 b1)))))
+
+      (progn
+        (setq signed t)
+        (if (> a1 b1)
+              (progn
+                (setq s0 (- b0 a0 1))
+                (setq s1 (- b1 -65536 a1)))
+            (progn
+              (setq s0 (- b0 a0))
+              (setq s1 (- b1 a1))))))
+
+    (* (if signed -1 1) (+ (* 65536 s0) s1))))
+
+(defsubst timan-calc-time-format-duration (dur)
+  (let* ((sign (< dur 0))
+         (sub  (abs dur))
+         (s    (mod (- sub 0    ) (* 1 60)))
+         (m    (mod (- sub 0 s  ) (* 1 60 60)))
+         (h    (mod (- sub 0 s m) (* 1 60 60 24)))
+         (d    (/ sub 60 60 24)))
+    (concat (if sign "-" "")
+            (if (> d 0) (format "%ddays+" d) "")
+            (format "%02d:%02d:%02d"
+                    (/ h 60 60)
+                    (/ m 60) s))))
+
+
+;; TODO 関数には問題がないがテストに問題があるのをなんとかする
+(eval-after-load "yatest"
+  '(yatest::define-test timan timan-calc
+     (let* ((a  (current-time))
+            (b  (progn (sleep-for 1) (current-time)))
+            (i  0))
+
+       (yatest "a > b X" (not (timan-calc-time-gt a b)))
+       (yatest "b > a O" (timan-calc-time-gt b a))
+       (yatest "a > a X" (not (timan-calc-time-gt a a)))
+       (yatest::p "" "----------------------------------------")
+       (yatest "simple"
+               (= 1 (yatest::p "simple" (timan-calc-time-sub b a))))
+       (yatest "-simple"
+               (= -1 (yatest::p "-simple" (timan-calc-time-sub a b))))
+
+       (while (< i 20)
+         (yatest::p "" " - - - - - - - - - - - - - - - - - - -")
+         (let* ((s  (+ (* 60 60 24 3) (random (* 60 60 24))))
+                (s0 (/   s 65536))
+                (s1 (mod s 65536))
+                (c  (let ((c0 (+ (car  a) s0))
+                          (c1 (+ (cadr a) s1)))
+                      (list (+ c0 (/ c1 65536)) (mod c1 65535)))))
+           (yatest::p "s = " s)
+           (yatest::p "c = " c)
+           (yatest::p "a = " a)
+           (yatest "long"
+                   (= s (yatest::p "long" (timan-calc-time-sub c a)))))
+         (setq i (1+ i)))
+       )))
+;;(yatest::run 'timan 'timan-calc)
+;;(mod (+ (% 314210 65536) 36016) 65536)
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -167,9 +262,16 @@
 ;;; timan insert
 ;;;
 
+(defconst timan-last-insert (current-time))
+
 (defun timan-insert-current-time (&optional header)
   (interactive)
-  (insert (or header "AT") ": " (current-time-string)))
+  (let ((now (current-time)))
+    (insert 
+     (format "(%s)->" (timan-calc-time-format-duration
+                       (timan-calc-time-sub now timan-last-insert)))
+     (or header "AT") ": " (current-time-string))
+    (setq timan-last-insert now)))
 
 
 
@@ -357,8 +459,7 @@
 
 (defun timan-kitchen-timer-with-insert (timestring &optional timan-sym)
   (interactive (timan-kitchen-timer--read-timestring))
-  (timan-insert-current-time "START")
-  (insert " -> ")
+  (timan-insert-current-time "START")(insert "-")
   (let* ((buf   (current-buffer))
          (point (point))
          (done  `(lambda ()
@@ -378,6 +479,12 @@
                           )))))
 
     (timan-kitchen-timer--run-at-time timestring done  cancel)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;; 
+;;;
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
