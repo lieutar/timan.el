@@ -459,26 +459,29 @@
 
 (defun timan-kitchen-timer-with-insert (timestring &optional timan-sym)
   (interactive (timan-kitchen-timer--read-timestring))
-  (timan-insert-current-time "START")(insert "-")
   (let* ((buf   (current-buffer))
-         (point (point))
-         (done  `(lambda ()
-                   (save-excursion
-                     (save-window-excursion
-                       (set-buffer ,buf)
-                       (goto-char  ,point)
-                       (timan-insert-current-time "CLOSED")
-                       ))
-                   (timan-play-sound ,timan-sym)))
-         (cancel `(lambda ()
-                      (save-excursion
-                        (save-window-excursion
-                          (set-buffer ,buf)
-                          (goto-char  ,point)
-                          (timan-insert-current-time "CANCELED")
-                          )))))
-
-    (timan-kitchen-timer--run-at-time timestring done  cancel)))
+         (point (point-marker)))
+    (macrolet
+        ((cb (label)
+             `(lambda ()
+                (save-excursion
+                  (save-window-excursion
+                    (set-buffer ,buf)
+                    (goto-char  ,point)
+                    (beginning-of-line)
+                    (let ((col (- ,point (point))))
+                      (end-of-line)
+                      (insert "\n")
+                      (loop for n from 1 to col do
+                            (insert " ")))
+                    (insert "  - ")
+                    (timan-insert-current-time ,label)))
+                (timan-play-sound ,timan-sym))))
+      (insert "- ")
+      (timan-insert-current-time "START")
+      (timan-kitchen-timer--run-at-time timestring
+                                        (cb "CLOSED")
+                                        (cb "CANCELED")))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
