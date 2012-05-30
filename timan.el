@@ -1,4 +1,4 @@
-;;; timan.el --- 
+;;; timan.el --- ???
 
 ;; Copyright (C) 2010  
 
